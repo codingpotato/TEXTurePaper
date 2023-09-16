@@ -53,9 +53,9 @@ class SDXLDepth():
         images = self.pipe(prompt=prompt, image=image,
                            negative_prompt=negative_prompt,
                            controlnet_conditioning_scale=0.5,
-                           output_type="latent").images
+                           output_type="np").images
 
-        return images, []
+        return images[0], []
 
 
 def get_depth_map(image):

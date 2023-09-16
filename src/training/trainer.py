@@ -280,7 +280,9 @@ class TEXTure:
 
         cropped_rgb_output, steps_vis = self.diffusion.img2img_step(text_string,
                                                                     cropped_depth_render.detach())
-        cropped_rgb_output = cropped_rgb_output[:, :3, :, :]
+        cropped_rgb_output = torch.from_numpy(cropped_rgb_output)
+        cropped_rgb_output = cropped_rgb_output.unsqueeze(0).permute(0, 3, 1, 2)
+        print(cropped_rgb_output.shape)
         self.log_train_image(cropped_rgb_output, name='direct_output')
         self.log_diffusion_steps(steps_vis)
 
@@ -291,7 +293,6 @@ class TEXTure:
 
         # Extend rgb_output to full image size
         rgb_output = rgb_render.clone()
-        print(cropped_rgb_output.shape)
         print(rgb_output.shape)
         rgb_output[:, :, min_h:max_h, min_w:max_w] = cropped_rgb_output
         self.log_train_image(rgb_output, name='full_output')
