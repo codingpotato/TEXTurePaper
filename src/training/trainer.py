@@ -49,8 +49,7 @@ class TEXTure:
         self.text_z, self.text_string = self.calc_text_embeddings()
         self.dataloaders = self.init_dataloaders()
         self.back_im = torch.Tensor(np.array(Image.open(self.cfg.guide.background_img).convert('RGB'))).to(
-            self.device).permute(2, 0,
-                                 1) / 255.0
+            self.device).permute(2, 0, 1) / 255.0
 
         logger.info(f'Successfully initialized {self.cfg.log.exp_name}')
 
@@ -87,8 +86,9 @@ class TEXTure:
                 logger.info(text)
                 negative_prompt = None
                 logger.info(negative_prompt)
-                text_z.append(self.diffusion.get_text_embeds(
-                    [text], negative_prompt=negative_prompt))
+                # text_z.append(self.diffusion.get_text_embeds(
+                #     [text], negative_prompt=negative_prompt))
+                text_z.append("")
         return text_z, text_string
 
     def init_dataloaders(self) -> Dict[str, DataLoader]:
@@ -280,6 +280,7 @@ class TEXTure:
 
         cropped_rgb_output, steps_vis = self.diffusion.img2img_step(text_string,
                                                                     cropped_depth_render.detach())
+        cropped_rgb_output = cropped_rgb_output[:, :3, :, :]
         self.log_train_image(cropped_rgb_output, name='direct_output')
         self.log_diffusion_steps(steps_vis)
 
@@ -290,6 +291,8 @@ class TEXTure:
 
         # Extend rgb_output to full image size
         rgb_output = rgb_render.clone()
+        print(cropped_rgb_output.shape)
+        print(rgb_output.shape)
         rgb_output[:, :, min_h:max_h, min_w:max_w] = cropped_rgb_output
         self.log_train_image(rgb_output, name='full_output')
 
@@ -504,7 +507,7 @@ class TEXTure:
                 tensor = einops.rearrange(
                     tensor, '(1) c h w -> h w c').detach().cpu().numpy()
             Image.fromarray((tensor * 255).astype(np.uint8)).save(
-                self.train_renders_path / f'{self.paint_step:04d}_{name}.jpg')
+                self.train_renders_path / f'{self.paint_step:04d}_{name}.png')
 
     def log_diffusion_steps(self, intermediate_vis: List[Image.Image]):
         if len(intermediate_vis) > 0:

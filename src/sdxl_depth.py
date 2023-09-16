@@ -36,9 +36,26 @@ class SDXLDepth():
                      update_mask=None, latent_mode=False, check_mask=None,
                      fixed_seed=None, check_mask_iters=0.5,
                      intermediate_vis=False):
-        images = self.pipe(prompt, negative_prompt, depth_mask,
-                           controlnet_conditioning_scale=0.5).images
-        return images[0], []
+        depth_map = torch.nn.functional.interpolate(
+            depth_mask,
+            size=(1024, 1024),
+            mode="bicubic",
+            align_corners=False,
+        )
+        depth_min = torch.amin(depth_map, dim=[1, 2, 3], keepdim=True)
+        depth_max = torch.amax(depth_map, dim=[1, 2, 3], keepdim=True)
+        depth_map = (depth_map - depth_min) / (depth_max - depth_min)
+        image = torch.cat([depth_map] * 3, dim=1)
+
+        image = image.permute(0, 2, 3, 1).cpu().numpy()[0]
+        image = Image.fromarray((image * 255.0).clip(0, 255).astype(np.uint8))
+
+        images = self.pipe(prompt=prompt, image=image,
+                           negative_prompt=negative_prompt,
+                           controlnet_conditioning_scale=0.5,
+                           output_type="latent").images
+
+        return images, []
 
 
 def get_depth_map(image):
