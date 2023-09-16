@@ -7,16 +7,17 @@ from transformers import DPTFeatureExtractor, DPTForDepthEstimation
 
 
 class SDXLDepth():
-    def __init__(self):
+    def __init__(self, device):
+        self.device = device
         controlnet = ControlNetModel.from_pretrained(
             "diffusers/controlnet-depth-sdxl-1.0",
             variant="fp16",
             use_safetensors=True,
             torch_dtype=torch.float16,
-        ).to("cuda")
+        ).to(device)
         vae = AutoencoderKL.from_pretrained(
             "madebyollin/sdxl-vae-fp16-fix",
-            torch_dtype=torch.float16).to("cuda")
+            torch_dtype=torch.float16).to(device)
         self.pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
             "stabilityai/stable-diffusion-xl-base-1.0",
             controlnet=controlnet,
@@ -24,7 +25,8 @@ class SDXLDepth():
             variant="fp16",
             use_safetensors=True,
             torch_dtype=torch.float16,
-        ).to("cuda")
+        ).to(device)
+        self.pipe.enable_model_cpu_offload()
 
     def get_text_embeddings(self, prompt, negative_prompt=None):
         pass
@@ -36,7 +38,7 @@ class SDXLDepth():
                      intermediate_vis=False):
         images = self.pipe(prompt, negative_prompt, depth_mask,
                            controlnet_conditioning_scale=0.5).images
-        return images[0]
+        return images[0], []
 
 
 def get_depth_map(image):
@@ -67,12 +69,12 @@ def get_depth_map(image):
 
 
 if __name__ == "__main__":
-    sd = SDXLDepth()
+    sd = SDXLDepth("cuda")
     image = load_image(
         "https://huggingface.co/lllyasviel/sd-controlnet-depth/resolve/main/images/stormtrooper.png")
     depth_image = get_depth_map(image)
     image = sd.img2img_step("spider man lecture, marvel movie character, photorealistic",
-                    depth_mask=depth_image)
+                            depth_mask=depth_image)
 
     depth_image.save("depth.jpg")
     image.save(f"stormtrooper.png")
