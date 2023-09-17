@@ -18,7 +18,7 @@ from tqdm import tqdm
 from src import utils
 from src.configs.train_config import TrainConfig
 from src.models.textured_mesh import TexturedMeshModel
-from src.sdxl_depth import SDXLDepth
+from src.sdxl import SDXL
 from src.training.views_dataset import ViewsDataset, MultiviewDataset
 from src.utils import make_path, tensor2numpy
 
@@ -69,7 +69,7 @@ class TEXTure:
         return model
 
     def init_diffusion(self) -> Any:
-        diffusion_model = SDXLDepth(self.device)
+        diffusion_model = SDXL(self.device)
         return diffusion_model
 
     def calc_text_embeddings(self) -> Union[torch.Tensor, List[torch.Tensor]]:
@@ -278,8 +278,10 @@ class TEXTure:
                                  'checkerboard_input')
         self.diffusion.use_inpaint = self.cfg.guide.use_inpainting and self.paint_step > 1
 
-        cropped_rgb_output, steps_vis = self.diffusion.img2img_step(text_string,
-                                                                    cropped_depth_render.detach())
+        image = cropped_rgb_render.detach() if self.paint_step > 1 else None
+        cropped_rgb_output, steps_vis = self.diffusion.img2img_step(prompt=text_string,
+                                                                    depth_mask=cropped_depth_render.detach(),
+                                                                    image=image)
         cropped_rgb_output = torch.from_numpy(cropped_rgb_output)
         cropped_rgb_output = cropped_rgb_output.unsqueeze(0).permute(0, 3, 1, 2)
         print(cropped_rgb_output.shape)
