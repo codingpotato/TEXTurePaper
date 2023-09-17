@@ -281,10 +281,11 @@ class TEXTure:
         self.diffusion.use_inpaint = self.cfg.guide.use_inpainting and self.paint_step > 1
 
         image = cropped_rgb_render.detach() if self.paint_step > 1 else None
-        cropped_rgb_output, steps_vis = self.diffusion.img2img_step(
-            prompt=text_string,
+        cropped_rgb_output, steps_vis = self.diffusion.paint_step(
+            image=image,
             depth_mask=cropped_depth_render.detach(),
-            image=image
+            update_mask=cropped_update_mask,
+            prompt=text_string,
         )
         cropped_rgb_output = torch.from_numpy(cropped_rgb_output)
         cropped_rgb_output = cropped_rgb_output.unsqueeze(

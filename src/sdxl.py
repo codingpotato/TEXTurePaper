@@ -56,13 +56,19 @@ class SDXL:
             image_min = torch.amin(image, dim=[1, 2, 3], keepdim=True)
             image_max = torch.amax(image, dim=[1, 2, 3], keepdim=True)
             image = (image - image_min) / (image_max - image_min)
-            image_mask = np.array(image_mask.convert(
-                "L")).astype(np.float32) / 255.0
+
+            update_mask = torch.nn.functional.interpolate(
+                update_mask, size=(1024, 1024), mode="bicubic",
+                align_corners=False,
+            )
+            update_mask_min = torch.amin(update_mask, dim=[1, 2, 3], keepdim=True)
+            update_mask_max = torch.amax(update_mask, dim=[1, 2, 3], keepdim=True)
+            update_mask = (update_mask - update_mask_min) / (update_mask_max - update_mask_min)
 
             images = self.pipe_inpaint(prompt=prompt,
                                        negative_prompt=negative_prompt,
                                        image=image,
-                                       mask_image=image_mask,
+                                       mask_image=update_mask,
                                        control_image=depth_mask,
                                        strength=0.99,
                                        num_inference_steps=50,
