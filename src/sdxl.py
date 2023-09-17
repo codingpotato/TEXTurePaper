@@ -1,9 +1,10 @@
-import torch
 import numpy as np
-from PIL import Image
+import torch
 
-from transformers import DPTFeatureExtractor, DPTForDepthEstimation
-from diffusers import ControlNetModel, StableDiffusionXLControlNetImg2ImgPipeline, StableDiffusionXLControlNetPipeline
+from diffusers import ControlNetModel
+from diffusers import StableDiffusionXLControlNetPipeline
+from diffusers import StableDiffusionXLControlNetInpaintPipeline
+from PIL import Image
 
 
 class SDXL:
@@ -12,24 +13,29 @@ class SDXL:
 
         controlnet = ControlNetModel.from_pretrained(
             "diffusers/controlnet-depth-sdxl-1.0",
-            variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
+            variant="fp16",
+            use_safetensors=True,
+            torch_dtype=torch.float16,
         ).to(device)
 
         self.pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
             "stabilityai/stable-diffusion-xl-base-1.0",
-            controlnet=controlnet, variant="fp16", use_safetensors=True,
+            controlnet=controlnet,
+            variant="fp16",
+            use_safetensors=True,
             torch_dtype=torch.float16,
         ).to(device)
-        self.pipe.enable_model_cpu_offload()
 
-        self.pipe_img2img = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
+        self.pipe_inpaint = StableDiffusionXLControlNetInpaintPipeline.from_pretrained(
             "stabilityai/stable-diffusion-xl-base-1.0",
-            controlnet=controlnet, variant="fp16", use_safetensors=True,
+            controlnet=controlnet,
+            variant="fp16",
+            use_safetensors=True,
             torch_dtype=torch.float16,
         ).to(device)
-        self.pipe_img2img.enable_model_cpu_offload()
 
-    def img2img_step(self, prompt, depth_mask, negative_prompt=None, image=None):
+    def paint_step(self, image, depth_mask, update_mask, prompt,
+                   negative_prompt=None):
         depth_mask = torch.nn.functional.interpolate(
             depth_mask, size=(1024, 1024), mode="bicubic",
             align_corners=False,
@@ -39,7 +45,8 @@ class SDXL:
         depth_mask = (depth_mask - depth_min) / (depth_max - depth_min)
         depth_mask = torch.cat([depth_mask] * 3, dim=1)
         depth_mask = depth_mask.permute(0, 2, 3, 1).cpu().numpy()[0]
-        depth_mask = Image.fromarray((depth_mask * 255.0).clip(0, 255).astype(np.uint8))
+        depth_mask = Image.fromarray(
+            (depth_mask * 255.0).clip(0, 255).astype(np.uint8))
 
         if image is not None:
             image = torch.nn.functional.interpolate(
@@ -49,10 +56,16 @@ class SDXL:
             image_min = torch.amin(image, dim=[1, 2, 3], keepdim=True)
             image_max = torch.amax(image, dim=[1, 2, 3], keepdim=True)
             image = (image - image_min) / (image_max - image_min)
+            image_mask = np.array(image_mask.convert(
+                "L")).astype(np.float32) / 255.0
 
-            images = self.pipe_img2img(prompt=prompt, negative_prompt=negative_prompt,
-                                       image=image, control_image=depth_mask,
-                                       strength=0.99, num_inference_steps=50,
+            images = self.pipe_inpaint(prompt=prompt,
+                                       negative_prompt=negative_prompt,
+                                       image=image,
+                                       mask_image=image_mask,
+                                       control_image=depth_mask,
+                                       strength=0.99,
+                                       num_inference_steps=50,
                                        controlnet_conditioning_scale=0.5,
                                        output_type="np").images
         else:

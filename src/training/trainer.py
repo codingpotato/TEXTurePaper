@@ -242,12 +242,14 @@ class TEXTure:
             text_string = self.text_string
         logger.info(f'text: {text_string}')
 
-        update_mask, generate_mask, refine_mask = self.calculate_trimap(rgb_render_raw=rgb_render_raw,
-                                                                        depth_render=depth_render,
-                                                                        z_normals=z_normals,
-                                                                        z_normals_cache=z_normals_cache,
-                                                                        edited_mask=edited_mask,
-                                                                        mask=outputs['mask'])
+        update_mask, generate_mask, refine_mask = self.calculate_trimap(
+            rgb_render_raw=rgb_render_raw,
+            depth_render=depth_render,
+            z_normals=z_normals,
+            z_normals_cache=z_normals_cache,
+            edited_mask=edited_mask,
+            mask=outputs['mask']
+        )
 
         update_ratio = float(update_mask.sum() /
                              (update_mask.shape[2] * update_mask.shape[3]))
@@ -279,11 +281,14 @@ class TEXTure:
         self.diffusion.use_inpaint = self.cfg.guide.use_inpainting and self.paint_step > 1
 
         image = cropped_rgb_render.detach() if self.paint_step > 1 else None
-        cropped_rgb_output, steps_vis = self.diffusion.img2img_step(prompt=text_string,
-                                                                    depth_mask=cropped_depth_render.detach(),
-                                                                    image=image)
+        cropped_rgb_output, steps_vis = self.diffusion.img2img_step(
+            prompt=text_string,
+            depth_mask=cropped_depth_render.detach(),
+            image=image
+        )
         cropped_rgb_output = torch.from_numpy(cropped_rgb_output)
-        cropped_rgb_output = cropped_rgb_output.unsqueeze(0).permute(0, 3, 1, 2)
+        cropped_rgb_output = cropped_rgb_output.unsqueeze(
+            0).permute(0, 3, 1, 2)
         print(cropped_rgb_output.shape)
         self.log_train_image(cropped_rgb_output, name='direct_output')
         self.log_diffusion_steps(steps_vis)
