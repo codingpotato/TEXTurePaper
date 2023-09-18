@@ -1,5 +1,5 @@
-torch==1.12.1
-torchvision==0.13.1
+torch
+torchvision
 transformers
 diffusers
 accelerate
@@ -13,3 +13,4 @@ loguru
 tqdm
 einops
 opencv-python
+imageio-ffmpeg
