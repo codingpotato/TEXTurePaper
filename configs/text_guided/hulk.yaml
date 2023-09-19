@@ -1,0 +1,16 @@
+log:
+  exp_name: hulk
+  save_interval: 18
+guide:
+  text: "hulk, marvel movie character, full bosy"
+  diffusion_name: stabilityai/stable-diffusion-2-depth
+  shape_scale: 0.6
+  append_direction: True
+  shape_path: ../obj/hulk.obj
+  texture_resolution: 1024
+  guidance_scale: 10
+  texture_interpolation_mode: 'bilinear'
+optim:
+  seed: 2
+render:
+  front_offset: 0

@@ -5,9 +5,9 @@ import torch
 
 from contextlib import nullcontext
 from einops import rearrange
-from ldm.models.diffusion.ddim import DDIMSampler
-from ldm.util import create_carvekit_interface, load_and_preprocess
-from ldm.util import instantiate_from_config
+from src.ldm.models.diffusion.ddim import DDIMSampler
+from src.ldm.util import create_carvekit_interface, load_and_preprocess
+from src.ldm.util import instantiate_from_config
 from lovely_numpy import lo
 from omegaconf import OmegaConf
 from PIL import Image
@@ -41,7 +41,7 @@ class Zero123:
             print('[INFO] unexpected keys: \n', u)
 
         torch.cuda.empty_cache()
-        model.eval().to(device)
+        model.eval().to(self.device)
         return model
 
     @torch.no_grad()
@@ -105,7 +105,7 @@ class Zero123:
 
         image = 255.0 * \
             rearrange(x_samples_ddim[0].cpu().numpy(), 'c h w -> h w c')
-        return Image.fromarray(image.astype(np.uint8))
+        return torch.from_numpy(image.astype(np.uint8))
 
     def preprocess_image(self, input_img, preprocess=True):
         '''

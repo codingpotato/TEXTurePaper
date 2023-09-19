@@ -12,15 +12,16 @@ from PIL import Image
 from loguru import logger
 from matplotlib import cm
 from torch import nn
+from torchvision import transforms
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from src import utils
-from src.configs.train_config import TrainConfig
-from src.models.textured_mesh import TexturedMeshModel
-from src.sdxl import SDXL
-from src.zero123 import Zero123
-from src.training.views_dataset import ViewsDataset, MultiviewDataset
-from src.utils import make_path, tensor2numpy
+import utils
+from configs.train_config import TrainConfig
+from models.textured_mesh import TexturedMeshModel
+from sdxl import SDXL
+from zero123 import Zero123
+from training.views_dataset import ViewsDataset, MultiviewDataset
+from utils import make_path, tensor2numpy
 
 
 class TEXTure:
@@ -48,7 +49,7 @@ class TEXTure:
                      (0, 135), (0, -135), (0, 180), (-90, 0), (90, 0)]
         self.mesh_model = self.init_mesh_model()
         self.sdxl = SDXL(self.device)
-        self.zero123 = Zero123()
+        self.zero123 = Zero123(self.device)
         self.text_z, self.text_string = self.calc_text_embeddings()
         self.dataloaders = self.init_dataloaders()
         self.back_im = torch.Tensor(np.array(Image.open(self.cfg.guide.background_img).convert(
@@ -287,11 +288,8 @@ class TEXTure:
         cropped_rgb_output, steps_vis = self.sdxl(
             image=image,
             depth_mask=cropped_depth_render.detach(),
-            update_mask=cropped_update_mask,
             prompt=text_string,
         )
-        if self.paint_step == 1:
-            self.front_img = Image.fromarray(cropped_rgb_output)
 
         cropped_rgb_output = torch.from_numpy(cropped_rgb_output)
         cropped_rgb_output = cropped_rgb_output.unsqueeze(
@@ -304,6 +302,11 @@ class TEXTure:
                                            (cropped_rgb_render.shape[2],
                                             cropped_rgb_render.shape[3]),
                                            mode='bilinear', align_corners=False)
+
+        print(f'cropped_rgb_output: {cropped_rgb_output.shape}')
+        if self.paint_step == 1:
+            transform = transforms.ToPILImage()
+            self.front_img = transform(torch.squeeze(cropped_rgb_output))
 
         # Extend rgb_output to full image size
         rgb_output = rgb_render.clone()

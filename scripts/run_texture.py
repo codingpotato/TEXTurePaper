@@ -1,7 +1,10 @@
 import pyrallis
+import sys
 
-from src.configs.train_config import TrainConfig
-from src.training.trainer import TEXTure
+sys.path.append("./src")
+
+from configs.train_config import TrainConfig
+from training.trainer import TEXTure
 
 
 @pyrallis.wrap()
@@ -15,3 +18,4 @@ def main(cfg: TrainConfig):
 
 if __name__ == '__main__':
     main()
+

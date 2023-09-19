@@ -34,6 +34,7 @@ class SDXL():
         self.pipe.enable_model_cpu_offload()
 
     def __call__(self, image, depth_mask, prompt, negative_prompt=None):
+        print(depth_mask)
         depth_mask = torch.nn.functional.interpolate(
             depth_mask,
             size=(1024, 1024),
@@ -50,12 +51,14 @@ class SDXL():
             (depth_mask * 255.0).clip(0, 255).astype(np.uint8))
 
         if image is not None:
-            image = torch.nn.functional.interpolate(
-                image, size=(1024, 1024), mode="bicubic", align_corners=False,
-            )
+            image = torch.unsqueeze(image, 0).permute(0, 3, 2, 1)
             image_min = torch.amin(image, dim=[1, 2, 3], keepdim=True)
             image_max = torch.amax(image, dim=[1, 2, 3], keepdim=True)
             image = (image - image_min) / (image_max - image_min)
+            print(image)
+            image = torch.nn.functional.interpolate(
+                image, size=(1024, 1024), mode="bicubic", align_corners=False,
+            )
 
             images = self.pipe_img2img(prompt=prompt, image=image,
                                        control_image=depth_mask,
@@ -64,10 +67,10 @@ class SDXL():
                                        controlnet_conditioning_scale=0.5,
                                        output_type="np").images
         else:
-            images = self.pipe_img2img(prompt=prompt, image=depth_mask,
-                                       negative_prompt=negative_prompt,
-                                       num_inference_steps=50,
-                                       controlnet_conditioning_scale=0.5,
-                                       output_type="np").images
+            images = self.pipe(prompt=prompt, image=depth_mask,
+                               negative_prompt=negative_prompt,
+                               num_inference_steps=50,
+                               controlnet_conditioning_scale=0.5,
+                               output_type="np").images
 
         return images[0], []
