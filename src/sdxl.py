@@ -51,7 +51,7 @@ class SDXL():
             (depth_mask * 255.0).clip(0, 255).astype(np.uint8))
 
         if image is not None:
-            image = torch.unsqueeze(image, 0).permute(0, 3, 2, 1)
+            image = torch.unsqueeze(image, 0).permute(0, 3, 1, 2)
             image_min = torch.amin(image, dim=[1, 2, 3], keepdim=True)
             image_max = torch.amax(image, dim=[1, 2, 3], keepdim=True)
             image = (image - image_min) / (image_max - image_min)
@@ -64,13 +64,14 @@ class SDXL():
                                        control_image=depth_mask,
                                        negative_prompt=negative_prompt,
                                        num_inference_steps=50,
-                                       controlnet_conditioning_scale=0.5,
+                                       strength=0.9,
+                                       controlnet_conditioning_scale=1.0,
                                        output_type="np").images
         else:
             images = self.pipe(prompt=prompt, image=depth_mask,
                                negative_prompt=negative_prompt,
                                num_inference_steps=50,
-                               controlnet_conditioning_scale=0.5,
+                               controlnet_conditioning_scale=1.0,
                                output_type="np").images
 
         return images[0], []

@@ -45,8 +45,8 @@ class TEXTure:
 
         self.view_dirs = ['front', 'left',
                           'back', 'right', 'overhead', 'bottom']
-        self.dirs = [(0, 45), (0, -45), (0, 90), (0, -90),
-                     (0, 135), (0, -135), (0, 180), (-90, 0), (90, 0)]
+        self.dirs = [(-60, 45), (-60, -45), (-60, 90), (-60, -90),
+                     (-60, 135), (-60, -135), (-60, 180), (-90, 0), (90, 0)]
         self.mesh_model = self.init_mesh_model()
         self.sdxl = SDXL(self.device)
         self.zero123 = Zero123(self.device)
@@ -283,6 +283,7 @@ class TEXTure:
             image = self.zero123(raw_img=self.front_img,
                                  x=self.dirs[self.paint_step - 2][0],
                                  y=self.dirs[self.paint_step - 2][1])
+            self.log_train_image(torch.unsqueeze(image, 0).permute(0, 3, 1, 2), 'zero123_output')
         else:
             image = None
         cropped_rgb_output, steps_vis = self.sdxl(
