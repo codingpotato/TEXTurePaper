@@ -107,7 +107,7 @@ class Zero123:
             rearrange(x_samples_ddim[0].cpu().numpy(), 'c h w -> h w c')
         return Image.fromarray(image.astype(np.uint8))
 
-    def preprocess_image(self, input_img, preprocess):
+    def preprocess_image(self, input_img, preprocess=True):
         '''
         :param input_img (PIL Image).
         :return input_img (H, W, 3) array in [0, 1].
