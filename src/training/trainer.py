@@ -1,6 +1,3 @@
-from pathlib import Path
-from typing import Any, Dict, Union, List
-
 import cv2
 import einops
 import imageio
@@ -8,17 +5,20 @@ import numpy as np
 import pyrallis
 import torch
 import torch.nn.functional as F
+
+from pathlib import Path
+from typing import Any, Dict, Union, List
 from PIL import Image
 from loguru import logger
 from matplotlib import cm
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
 from src import utils
 from src.configs.train_config import TrainConfig
 from src.models.textured_mesh import TexturedMeshModel
 from src.sdxl import SDXL
+from src.zero123 import Zero123
 from src.training.views_dataset import ViewsDataset, MultiviewDataset
 from src.utils import make_path, tensor2numpy
 
@@ -44,12 +44,15 @@ class TEXTure:
 
         self.view_dirs = ['front', 'left',
                           'back', 'right', 'overhead', 'bottom']
+        self.dirs = [(0, 45), (0, -45), (0, 90), (0, -90),
+                     (0, 135), (0, -135), (0, 180), (-90, 0), (90, 0)]
         self.mesh_model = self.init_mesh_model()
-        self.diffusion = self.init_diffusion()
+        self.sdxl = SDXL(self.device)
+        self.zero123 = Zero123()
         self.text_z, self.text_string = self.calc_text_embeddings()
         self.dataloaders = self.init_dataloaders()
-        self.back_im = torch.Tensor(np.array(Image.open(self.cfg.guide.background_img).convert('RGB'))).to(
-            self.device).permute(2, 0, 1) / 255.0
+        self.back_im = torch.Tensor(np.array(Image.open(self.cfg.guide.background_img).convert(
+            'RGB'))).to(self.device).permute(2, 0, 1) / 255.0
 
         logger.info(f'Successfully initialized {self.cfg.log.exp_name}')
 
@@ -68,14 +71,10 @@ class TEXTure:
         logger.info(model)
         return model
 
-    def init_diffusion(self) -> Any:
-        diffusion_model = SDXL(self.device)
-        return diffusion_model
-
     def calc_text_embeddings(self) -> Union[torch.Tensor, List[torch.Tensor]]:
         ref_text = self.cfg.guide.text
         if not self.cfg.guide.append_direction:
-            text_z = self.diffusion.get_text_embeds([ref_text])
+            text_z = self.sdxl.get_text_embeds([ref_text])
             text_string = ref_text
         else:
             text_z = []
@@ -278,15 +277,22 @@ class TEXTure:
                                                       crop(generate_mask))
             self.log_train_image(F.interpolate(cropped_rgb_render, (512, 512)) * (1 - checker_mask),
                                  'checkerboard_input')
-        self.diffusion.use_inpaint = self.cfg.guide.use_inpainting and self.paint_step > 1
 
-        image = cropped_rgb_render.detach() if self.paint_step > 1 else None
-        cropped_rgb_output, steps_vis = self.diffusion.paint_step(
+        if self.paint_step > 1:
+            image = self.zero123(raw_img=self.front_img,
+                                 x=self.dirs[self.paint_step - 2][0],
+                                 y=self.dirs[self.paint_step - 2][1])
+        else:
+            image = None
+        cropped_rgb_output, steps_vis = self.sdxl(
             image=image,
             depth_mask=cropped_depth_render.detach(),
             update_mask=cropped_update_mask,
             prompt=text_string,
         )
+        if self.paint_step == 1:
+            self.front_img = Image.fromarray(cropped_rgb_output)
+
         cropped_rgb_output = torch.from_numpy(cropped_rgb_output)
         cropped_rgb_output = cropped_rgb_output.unsqueeze(
             0).permute(0, 3, 1, 2)
