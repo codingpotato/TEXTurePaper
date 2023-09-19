@@ -114,9 +114,7 @@ class Zero123:
                 rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
             output_ims.append(Image.fromarray(x_sample.astype(np.uint8)))
 
-        description = None
-
-        return (description, output_ims)
+        return output_ims
 
     def preprocess_image(self, input_img, preprocess):
         '''
@@ -160,4 +158,6 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     zero123 = Zero123(device)
     raw_img = Image.open('../images/hulk.png')
-    zero123.main_run(raw_img=raw_img)
+    images = zero123.main_run(raw_img=raw_img)
+    images[0].save('../images/output.png')
+
