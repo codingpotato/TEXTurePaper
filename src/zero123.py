@@ -25,21 +25,6 @@ class Zero123:
         self.carvekit = create_carvekit_interface()
 
     def load_model_from_config(self, config, ckpt, verbose=False):
-        print(f'Loading model from {ckpt}')
-        pl_sd = torch.load(ckpt, map_location='cpu')
-        if 'global_step' in pl_sd:
-            print(f'Global Step: {pl_sd["global_step"]}')
-        sd = pl_sd['state_dict']
-        model = instantiate_from_config(config.model)
-        m, u = model.load_state_dict(sd, strict=False)
-        if len(m) > 0 and verbose:
-            print(f'missing keys: {m}')
-        if len(u) > 0 and verbose:
-            print(f'unexpected keys: {u}')
-
-        model.to(self.device)
-        model.eval()
-
         pl_sd = torch.load(ckpt, map_location='cpu')
 
         if 'global_step' in pl_sd and verbose:
@@ -55,13 +40,6 @@ class Zero123:
         if len(u) > 0 and verbose:
             print('[INFO] unexpected keys: \n', u)
 
-        # manually load ema and delete it to save GPU memory
-        if model.use_ema:
-            if verbose:
-                print('[INFO] loading EMA...')
-            model.model_ema.copy_to(model.model)
-            del model.model_ema
-        del model.first_stage_model.decoder
         torch.cuda.empty_cache()
         model.eval().to(device)
         return model
@@ -108,8 +86,7 @@ class Zero123:
                 x_samples_ddim = self.zero123.decode_first_stage(samples_ddim)
                 return torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0).cpu()
 
-    def main_run(self, models,
-                 x=0.0, y=0.0, z=0.0,
+    def main_run(self, x=0.0, y=0.0, z=0.0,
                  raw_img=None, preprocess=True,
                  scale=3.0, n_samples=1, ddim_steps=50, ddim_eta=1.0,
                  precision='fp32', h=256, w=256):
@@ -118,13 +95,13 @@ class Zero123:
         '''
 
         raw_img.thumbnail([1536, 1536], Image.Resampling.LANCZOS)
-        input_img = self.preprocess_image(models, raw_img, preprocess)
+        input_img = self.preprocess_image(raw_img, preprocess)
 
         input_img = transforms.ToTensor()(input_img).unsqueeze(0).to(self.device)
         input_img = input_img * 2 - 1
         input_img = transforms.functional.resize(input_img, [h, w])
 
-        sampler = DDIMSampler(models['turncam'])
+        sampler = DDIMSampler(self.zero123)
         # used_x = -x  # NOTE: Polar makes more sense in Basile's opinion this way!
         used_x = x  # NOTE: Set this way for consistency.
         x_samples_ddim = self.sample_model(input_img, sampler, precision, h, w,
@@ -182,6 +159,5 @@ class Zero123:
 if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     zero123 = Zero123(device)
-    print('zero123 loaded')
-    raw_img = Image.open('../data/zero123/zero123.jpg')
-    zero123.main_run(raw_img)
+    raw_img = Image.open('../images/hulk.png')
+    zero123.main_run(raw_img=raw_img)

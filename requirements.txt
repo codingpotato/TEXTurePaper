@@ -15,9 +15,12 @@ einops
 opencv-python
 imageio-ffmpeg
 lovely_numpy
-omegaconf
+
+# for zero123
 carvekit-colab
+omegaconf
 torchmetrics==0.11.4
 pytorch_lightning==1.7.7
-taming-transformers
 taming-transformers-rom1504
+kornia
+git+https://github.com/openai/CLIP.git
