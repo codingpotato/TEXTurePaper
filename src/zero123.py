@@ -18,8 +18,9 @@ from torchvision import transforms
 class Zero123:
     def __init__(self, device):
         self.device = device
-        config = OmegaConf.load(config)
-        ckpt = '../pretrained/zero123/zero123-xl.pth'
+        config = OmegaConf.load(
+            'configs/sd-objaverse-finetune-c_concat-256.yaml')
+        ckpt = 'pretrained/zero123/zero123-xl.ckpt'
         self.zero123 = self.load_model_from_config(config, ckpt)
         self.carvekit = create_carvekit_interface()
 
@@ -38,6 +39,31 @@ class Zero123:
 
         model.to(self.device)
         model.eval()
+
+        pl_sd = torch.load(ckpt, map_location='cpu')
+
+        if 'global_step' in pl_sd and verbose:
+            print(f'[INFO] Global Step: {pl_sd["global_step"]}')
+
+        sd = pl_sd['state_dict']
+
+        model = instantiate_from_config(config.model)
+        m, u = model.load_state_dict(sd, strict=False)
+
+        if len(m) > 0 and verbose:
+            print('[INFO] missing keys: \n', m)
+        if len(u) > 0 and verbose:
+            print('[INFO] unexpected keys: \n', u)
+
+        # manually load ema and delete it to save GPU memory
+        if model.use_ema:
+            if verbose:
+                print('[INFO] loading EMA...')
+            model.model_ema.copy_to(model.model)
+            del model.model_ema
+        del model.first_stage_model.decoder
+        torch.cuda.empty_cache()
+        model.eval().to(device)
         return model
 
     @torch.no_grad()
@@ -151,3 +177,11 @@ class Zero123:
         print('new input_im:', lo(input_img))
 
         return input_img
+
+
+if __name__ == '__main__':
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    zero123 = Zero123(device)
+    print('zero123 loaded')
+    raw_img = Image.open('../data/zero123/zero123.jpg')
+    zero123.main_run(raw_img)

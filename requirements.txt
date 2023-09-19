@@ -16,3 +16,8 @@ opencv-python
 imageio-ffmpeg
 lovely_numpy
 omegaconf
+carvekit-colab
+torchmetrics==0.11.4
+pytorch_lightning==1.7.7
+taming-transformers
+taming-transformers-rom1504
