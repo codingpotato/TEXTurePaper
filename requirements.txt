@@ -14,3 +14,5 @@ tqdm
 einops
 opencv-python
 imageio-ffmpeg
+lovely_numpy
+omegaconf
