@@ -18,16 +18,17 @@ import cv2
 from carvekit.api.high import HiInterface
 import PIL
 
+
 def pil_rectangle_crop(im):
     width, height = im.size   # Get dimensions
-    
+
     if width <= height:
         left = 0
         right = width
         top = (height - width)/2
         bottom = (height + width)/2
     else:
-        
+
         top = 0
         bottom = height
         left = (width - height) / 2
@@ -36,6 +37,7 @@ def pil_rectangle_crop(im):
     # Crop the center of the image
     im = im.crop((left, top, right, bottom))
     return im
+
 
 def add_margin(pil_img, color, size=256):
     width, height = pil_img.size
@@ -72,17 +74,17 @@ def load_and_preprocess(interface, input_im):
     image_without_background = np.array(image_without_background)
     est_seg = image_without_background > 127
     image = np.array(image)
-    foreground = est_seg[:, : , -1].astype(np.bool_)
+    foreground = est_seg[:, :, -1].astype(np.bool_)
     image[~foreground] = [255., 255., 255.]
     x, y, w, h = cv2.boundingRect(foreground.astype(np.uint8))
     image = image[y:y+h, x:x+w, :]
     image = PIL.Image.fromarray(np.array(image))
-    
+
     # resize image such that long edge is 512
-    image.thumbnail([200, 200], Image.Resampling.LANCZOS)
+    image.thumbnail([250, 250], Image.Resampling.LANCZOS)
     image = add_margin(image, (255, 255, 255), size=256)
     image = np.array(image)
-    
+
     return image
 
 
@@ -96,7 +98,8 @@ def log_txt_as_img(wh, xc, size=10):
         draw = ImageDraw.Draw(txt)
         font = ImageFont.truetype('data/DejaVuSans.ttf', size=size)
         nc = int(40 * (wh[0] / 256))
-        lines = "\n".join(xc[bi][start:start + nc] for start in range(0, len(xc[bi]), nc))
+        lines = "\n".join(xc[bi][start:start + nc]
+                          for start in range(0, len(xc[bi]), nc))
 
         try:
             draw.text((0, 0), lines, fill="black", font=font)
@@ -117,7 +120,7 @@ def ismap(x):
 
 
 def isimage(x):
-    if not isinstance(x,torch.Tensor):
+    if not isinstance(x, torch.Tensor):
         return False
     return (len(x.shape) == 4) and (x.shape[1] == 3 or x.shape[1] == 1)
 
@@ -168,7 +171,8 @@ def get_obj_from_str(string, reload=False):
 class AdamWwithEMAandWings(optim.Optimizer):
     # credit to https://gist.github.com/crowsonkb/65f7265353f403714fce3b2595e0b298
     def __init__(self, params, lr=1.e-3, betas=(0.9, 0.999), eps=1.e-8,  # TODO: check hyperparameters before using
-                 weight_decay=1.e-2, amsgrad=False, ema_decay=0.9999,   # ema decay to match previous code
+                 # ema decay to match previous code
+                 weight_decay=1.e-2, amsgrad=False, ema_decay=0.9999,
                  ema_power=1., param_names=()):
         """AdamW that saves EMA versions of the parameters."""
         if not 0.0 <= lr:
@@ -176,11 +180,14 @@ class AdamWwithEMAandWings(optim.Optimizer):
         if not 0.0 <= eps:
             raise ValueError("Invalid epsilon value: {}".format(eps))
         if not 0.0 <= betas[0] < 1.0:
-            raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
+            raise ValueError(
+                "Invalid beta parameter at index 0: {}".format(betas[0]))
         if not 0.0 <= betas[1] < 1.0:
-            raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
+            raise ValueError(
+                "Invalid beta parameter at index 1: {}".format(betas[1]))
         if not 0.0 <= weight_decay:
-            raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
+            raise ValueError(
+                "Invalid weight_decay value: {}".format(weight_decay))
         if not 0.0 <= ema_decay <= 1.0:
             raise ValueError("Invalid ema_decay value: {}".format(ema_decay))
         defaults = dict(lr=lr, betas=betas, eps=eps,
@@ -224,7 +231,8 @@ class AdamWwithEMAandWings(optim.Optimizer):
                     continue
                 params_with_grad.append(p)
                 if p.grad.is_sparse:
-                    raise RuntimeError('AdamW does not support sparse gradients')
+                    raise RuntimeError(
+                        'AdamW does not support sparse gradients')
                 grads.append(p.grad)
 
                 state = self.state[p]
@@ -233,12 +241,15 @@ class AdamWwithEMAandWings(optim.Optimizer):
                 if len(state) == 0:
                     state['step'] = 0
                     # Exponential moving average of gradient values
-                    state['exp_avg'] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                    state['exp_avg'] = torch.zeros_like(
+                        p, memory_format=torch.preserve_format)
                     # Exponential moving average of squared gradient values
-                    state['exp_avg_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                    state['exp_avg_sq'] = torch.zeros_like(
+                        p, memory_format=torch.preserve_format)
                     if amsgrad:
                         # Maintains max of all exp. moving avg. of sq. grad. values
-                        state['max_exp_avg_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                        state['max_exp_avg_sq'] = torch.zeros_like(
+                            p, memory_format=torch.preserve_format)
                     # Exponential moving average of parameter values
                     state['param_exp_avg'] = p.detach().float().clone()
 
@@ -255,21 +266,22 @@ class AdamWwithEMAandWings(optim.Optimizer):
                 state_steps.append(state['step'])
 
             optim._functional.adamw(params_with_grad,
-                    grads,
-                    exp_avgs,
-                    exp_avg_sqs,
-                    max_exp_avg_sqs,
-                    state_steps,
-                    amsgrad=amsgrad,
-                    beta1=beta1,
-                    beta2=beta2,
-                    lr=group['lr'],
-                    weight_decay=group['weight_decay'],
-                    eps=group['eps'],
-                    maximize=False)
+                                    grads,
+                                    exp_avgs,
+                                    exp_avg_sqs,
+                                    max_exp_avg_sqs,
+                                    state_steps,
+                                    amsgrad=amsgrad,
+                                    beta1=beta1,
+                                    beta2=beta2,
+                                    lr=group['lr'],
+                                    weight_decay=group['weight_decay'],
+                                    eps=group['eps'],
+                                    maximize=False)
 
             cur_ema_decay = min(ema_decay, 1 - state['step'] ** -ema_power)
             for param, ema_param in zip(params_with_grad, ema_params_with_grad):
-                ema_param.mul_(cur_ema_decay).add_(param.float(), alpha=1 - cur_ema_decay)
+                ema_param.mul_(cur_ema_decay).add_(
+                    param.float(), alpha=1 - cur_ema_decay)
 
         return loss

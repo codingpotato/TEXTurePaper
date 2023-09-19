@@ -46,27 +46,27 @@ class Zero123:
 
     @torch.no_grad()
     def sample_model(self, input_img, sampler, precision, h, w, ddim_steps,
-                     n_samples, scale, ddim_eta, x, y, z):
+                     scale, ddim_eta, x, y, z):
         precision_scope = autocast if precision == 'autocast' else nullcontext
         with precision_scope(self.device):
             with self.zero123.ema_scope():
                 c = self.zero123.get_learned_conditioning(input_img)
-                c = c.tile(n_samples, 1, 1)
+                c = c.tile(1, 1, 1)
                 T = torch.tensor([math.radians(x),
                                   math.sin(math.radians(y)),
                                   math.cos(math.radians(y)),
                                   z])
-                T = T[None, None, :].repeat(n_samples, 1, 1).to(c.device)
+                T = T[None, None, :].repeat(1, 1, 1).to(c.device)
                 c = torch.cat([c, T], dim=-1)
                 c = self.zero123.cc_projection(c)
                 cond = {}
                 cond['c_crossattn'] = [c]
                 cond['c_concat'] = [self.zero123.encode_first_stage(
-                    (input_img.to(c.device))).mode().detach().repeat(n_samples, 1, 1, 1)]
+                    (input_img.to(c.device))).mode().detach().repeat(1, 1, 1, 1)]
                 if scale != 1.0:
                     uc = {}
                     uc['c_concat'] = [torch.zeros(
-                        n_samples, 4, h // 8, w // 8).to(c.device)]
+                        1, 4, h // 8, w // 8).to(c.device)]
                     uc['c_crossattn'] = [torch.zeros_like(c).to(c.device)]
                 else:
                     uc = None
@@ -74,7 +74,7 @@ class Zero123:
                 shape = [4, h // 8, w // 8]
                 samples_ddim, _ = sampler.sample(S=ddim_steps,
                                                  conditioning=cond,
-                                                 batch_size=n_samples,
+                                                 batch_size=1,
                                                  shape=shape,
                                                  verbose=False,
                                                  unconditional_guidance_scale=scale,
@@ -86,35 +86,26 @@ class Zero123:
                 x_samples_ddim = self.zero123.decode_first_stage(samples_ddim)
                 return torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0).cpu()
 
-    def main_run(self, x=0.0, y=0.0, z=0.0,
-                 raw_img=None, preprocess=True,
-                 scale=3.0, n_samples=1, ddim_steps=50, ddim_eta=1.0,
-                 precision='fp32', h=256, w=256):
+    def __call__(self, x=0.0, y=0.0, z=0.0, raw_img=None, scale=3.0,
+                 ddim_steps=50, ddim_eta=1.0, precision='fp16', h=256, w=256):
         '''
-        :param raw_im (PIL Image).
+        :param raw_img (PIL Image).
         '''
-
         raw_img.thumbnail([1536, 1536], Image.Resampling.LANCZOS)
-        input_img = self.preprocess_image(raw_img, preprocess)
+        input_img = self.preprocess_image(raw_img)
 
         input_img = transforms.ToTensor()(input_img).unsqueeze(0).to(self.device)
         input_img = input_img * 2 - 1
         input_img = transforms.functional.resize(input_img, [h, w])
 
         sampler = DDIMSampler(self.zero123)
-        # used_x = -x  # NOTE: Polar makes more sense in Basile's opinion this way!
-        used_x = x  # NOTE: Set this way for consistency.
-        x_samples_ddim = self.sample_model(input_img, sampler, precision, h, w,
-                                           ddim_steps, n_samples, scale,
-                                           ddim_eta, used_x, y, z)
+        x_samples_ddim = self.sample_model(
+            input_img, sampler, precision, h, w, ddim_steps, scale, ddim_eta,
+            x, y, z)
 
-        output_ims = []
-        for x_sample in x_samples_ddim:
-            x_sample = 255.0 * \
-                rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-            output_ims.append(Image.fromarray(x_sample.astype(np.uint8)))
-
-        return output_ims
+        image = 255.0 * \
+            rearrange(x_samples_ddim[0].cpu().numpy(), 'c h w -> h w c')
+        return Image.fromarray(image.astype(np.uint8))
 
     def preprocess_image(self, input_img, preprocess):
         '''
@@ -158,6 +149,5 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     zero123 = Zero123(device)
     raw_img = Image.open('../images/hulk.png')
-    images = zero123.main_run(raw_img=raw_img)
-    images[0].save('../images/output.png')
-
+    image = zero123(raw_img=raw_img, y=45.0)
+    image.save('../images/output.png')
