@@ -1,8 +1,8 @@
 import torch
 
-from diffusers import AutoPipelineForInpainting, ControlNetModel, DDIMScheduler
+from diffusers import ControlNetModel
+from diffusers import StableDiffusionXLControlNetInpaintPipeline
 from diffusers import StableDiffusionXLControlNetPipeline
-from diffusers import StableDiffusionXLControlNetImg2ImgPipeline
 from diffusers.utils import load_image
 from torchvision import transforms
 
@@ -21,15 +21,10 @@ class SDXL:
             variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
         ).to(device)
 
-        self.sdxl_inpaint = AutoPipelineForInpainting.from_pretrained(
+        self.sdxl_inpaint = StableDiffusionXLControlNetInpaintPipeline.from_pretrained(
             "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
-            variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
-        ).to(device)
-
-        self.sdxl_img2img = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-xl-base-1.0",
             controlnet=controlnet,
-            variant="fp16", use_safetensors=True, torch_dtype=torch.float16
+            variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
         ).to(device)
 
     def __call__(self, use_inpaint, prompt, image, depth_image, update_mask,
@@ -56,32 +51,14 @@ class SDXL:
                 update_mask, size=(1024, 1024), mode="bicubic",
                 align_corners=False,
             )
-            image = self.sdxl(prompt,
-                              image=depth_image,
-                              num_inference_steps=10,
-                              controlnet_conditioning_scale=0.5,
-                              output_type="np").images[0]
-            image = transforms.ToTensor()(image).unsqueeze(0).to(self.device)
             image = self.sdxl_inpaint(prompt,
-                                      num_inference_steps=20,
-                                      image=image,
-                                      mask_image=checker_mask,
-                                      output_type="np",
-                                      ).images[0]
-            image = transforms.ToTensor()(image).unsqueeze(0).to(self.device)
-            image = self.sdxl_inpaint(prompt,
-                                      num_inference_steps=20,
+                                      num_inference_steps=50,
                                       image=image,
                                       mask_image=update_mask,
+                                      control_image=depth_image,
+                                      strength=1.0,
                                       output_type="np",
                                       ).images[0]
-            image = transforms.ToTensor()(image).unsqueeze(0).to(self.device)
-            image = self.sdxl_img2img(prompt,
-                                      image=image,
-                                      control_image=depth_image,
-                                      num_inference_steps=20,
-                                      controlnet_conditioning_scale=0.5,
-                                      output_type="np").images[0]
         else:
             image = self.sdxl(prompt,
                               image=depth_image,
