@@ -45,8 +45,8 @@ class TEXTure:
 
         self.view_dirs = ['front', 'left',
                           'back', 'right', 'overhead', 'bottom']
-        self.dirs = [(-60, 45), (-60, -45), (-60, 90), (-60, -90),
-                     (-60, 135), (-60, -135), (-60, 180), (-90, 0), (90, 0)]
+        self.dirs = [(-15, 45), (-15, -45), (-15, 90), (-15, -90),
+                     (-15, 135), (-15, -135), (-15, 180), (-90, 0), (90, 0)]
         self.mesh_model = self.init_mesh_model()
         self.sdxl = SDXL(self.device)
         self.zero123 = Zero123(self.device)
@@ -282,10 +282,12 @@ class TEXTure:
         if self.paint_step > 1:
             image = self.zero123(raw_img=self.front_img,
                                  x=self.dirs[self.paint_step - 2][0],
-                                 y=self.dirs[self.paint_step - 2][1])
-            self.log_train_image(torch.unsqueeze(image, 0).permute(0, 3, 1, 2), 'zero123_output')
+                                 y=self.dirs[self.paint_step - 2][1]).to(self.device)
+            print(f'image: {image.shape}')
+            self.log_train_image(image, 'zero123_output')
         else:
             image = None
+
         cropped_rgb_output, steps_vis = self.sdxl(
             image=image,
             depth_mask=cropped_depth_render.detach(),
@@ -295,8 +297,6 @@ class TEXTure:
         cropped_rgb_output = torch.from_numpy(cropped_rgb_output)
         cropped_rgb_output = cropped_rgb_output.unsqueeze(
             0).permute(0, 3, 1, 2)
-        print(cropped_rgb_output.shape)
-        self.log_train_image(cropped_rgb_output, name='direct_output')
         self.log_diffusion_steps(steps_vis)
 
         cropped_rgb_output = F.interpolate(cropped_rgb_output,
@@ -304,6 +304,7 @@ class TEXTure:
                                             cropped_rgb_render.shape[3]),
                                            mode='bilinear', align_corners=False)
 
+        self.log_train_image(cropped_rgb_output, name='direct_output')
         print(f'cropped_rgb_output: {cropped_rgb_output.shape}')
         if self.paint_step == 1:
             transform = transforms.ToPILImage()
@@ -363,8 +364,8 @@ class TEXTure:
 
     def calculate_trimap(self, rgb_render_raw: torch.Tensor,
                          depth_render: torch.Tensor,
-                         z_normals: torch.Tensor, z_normals_cache: torch.Tensor, edited_mask: torch.Tensor,
-                         mask: torch.Tensor):
+                         z_normals: torch.Tensor, z_normals_cache: torch.Tensor,
+                         edited_mask: torch.Tensor, mask: torch.Tensor):
         diff = (rgb_render_raw.detach() - torch.tensor(self.mesh_model.default_color).view(1, 3, 1, 1).to(
             self.device)).abs().sum(axis=1)
         exact_generate_mask = (diff < 0.1).float().unsqueeze(0)
@@ -383,7 +384,6 @@ class TEXTure:
             object_mask.device).unsqueeze(0).unsqueeze(0)
 
         # Generate the refine mask based on the z normals, and the edited mask
-
         refine_mask = torch.zeros_like(update_mask)
         refine_mask[z_normals > z_normals_cache[:, :1, :, :] +
                     self.cfg.guide.z_update_thr] = 1

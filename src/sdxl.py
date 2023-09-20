@@ -4,11 +4,10 @@ import torch
 from diffusers import ControlNetModel
 from diffusers import StableDiffusionXLControlNetPipeline
 from diffusers import StableDiffusionXLControlNetImg2ImgPipeline
-from diffusers.utils import load_image
 from PIL import Image
 
 
-class SDXL():
+class SDXL:
     def __init__(self, device):
         self.device = device
         controlnet = ControlNetModel.from_pretrained(
@@ -51,11 +50,9 @@ class SDXL():
             (depth_mask * 255.0).clip(0, 255).astype(np.uint8))
 
         if image is not None:
-            image = torch.unsqueeze(image, 0).permute(0, 3, 1, 2)
             image_min = torch.amin(image, dim=[1, 2, 3], keepdim=True)
             image_max = torch.amax(image, dim=[1, 2, 3], keepdim=True)
             image = (image - image_min) / (image_max - image_min)
-            print(image)
             image = torch.nn.functional.interpolate(
                 image, size=(1024, 1024), mode="bicubic", align_corners=False,
             )
@@ -64,14 +61,14 @@ class SDXL():
                                        control_image=depth_mask,
                                        negative_prompt=negative_prompt,
                                        num_inference_steps=50,
-                                       strength=0.9,
-                                       controlnet_conditioning_scale=1.0,
+                                       strength=1.0,
+                                       controlnet_conditioning_scale=0.5,
                                        output_type="np").images
         else:
             images = self.pipe(prompt=prompt, image=depth_mask,
                                negative_prompt=negative_prompt,
                                num_inference_steps=50,
-                               controlnet_conditioning_scale=1.0,
+                               controlnet_conditioning_scale=0.5,
                                output_type="np").images
 
         return images[0], []

@@ -2,7 +2,7 @@ log:
   exp_name: hulk
   save_interval: 18
 guide:
-  text: "hulk, marvel movie character, full bosy"
+  text: "hulk, marvel movie character, full bosy, {} view"
   diffusion_name: stabilityai/stable-diffusion-2-depth
   shape_scale: 0.6
   append_direction: True
