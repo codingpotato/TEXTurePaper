@@ -1,7 +1,7 @@
 log:
   exp_name: napoleon
 guide:
-  text: "A photo of Napoleon Bonaparte, {} view"
+  text: "A photo of Napoleon Bonaparte, realistic, high detailed, 8k, {} view"
   append_direction: True
   shape_path: shapes/napoleon.obj
 optim:

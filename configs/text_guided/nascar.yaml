@@ -2,7 +2,7 @@ log:
   exp_name: nascar
   save_interval: 18
 guide:
-  text: "A next gen nascar, {} view"
+  text: "A next gen nascar, high detailed, 8k, realistic, {} view"
   diffusion_name: stabilityai/stable-diffusion-2-depth
   shape_scale: 0.6
   append_direction: True

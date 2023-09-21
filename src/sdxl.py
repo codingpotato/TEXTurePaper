@@ -3,7 +3,6 @@ import torch
 from diffusers import ControlNetModel
 from diffusers import StableDiffusionXLControlNetInpaintPipeline
 from diffusers import StableDiffusionXLControlNetPipeline
-from diffusers.utils import load_image
 from torchvision import transforms
 
 
@@ -43,6 +42,10 @@ class SDXL:
                 image, size=(1024, 1024), mode="bicubic",
                 align_corners=False,
             )
+            min = torch.amin(image, dim=[1, 2, 3], keepdim=True)
+            max = torch.amax(image, dim=[1, 2, 3], keepdim=True)
+            image = (image - min) / (max - min)
+
             checker_mask = torch.nn.functional.interpolate(
                 checker_mask, size=(1024, 1024), mode="bicubic",
                 align_corners=False,
@@ -51,37 +54,70 @@ class SDXL:
                 update_mask, size=(1024, 1024), mode="bicubic",
                 align_corners=False,
             )
+            update_min = torch.amin(update_mask, dim=[1, 2, 3], keepdim=True)
+            update_max = torch.amax(update_mask, dim=[1, 2, 3], keepdim=True)
+            update_mask = (update_mask - update_min) / \
+                (update_max - update_min)
+
             image = self.sdxl_inpaint(prompt,
-                                      num_inference_steps=50,
+                                      num_inference_steps=20,
                                       image=image,
-                                      mask_image=update_mask,
                                       control_image=depth_image,
-                                      strength=1.0,
+                                      mask_image=update_mask,
+                                      guidance_scale=8.0,
+                                      strength=0.99,
+                                      controlnet_conditioning_scale=0.8,
                                       output_type="np",
                                       ).images[0]
         else:
             image = self.sdxl(prompt,
                               image=depth_image,
-                              num_inference_steps=50,
-                              controlnet_conditioning_scale=0.5,
+                              num_inference_steps=20,
+                              guidance_scale=5.0,
+                              controlnet_conditioning_scale=0.8,
                               output_type="np").images[0]
         return transforms.ToTensor()(image).unsqueeze(0)
 
 
 if __name__ == "__main__":
+    from torchvision.utils import load_image, save_image
+    from transformers import DPTFeatureExtractor, DPTForDepthEstimation
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    depth_estimator = DPTForDepthEstimation.from_pretrained(
+        "Intel/dpt-hybrid-midas").to(device)
+    feature_extractor = DPTFeatureExtractor.from_pretrained(
+        "Intel/dpt-hybrid-midas")
+
+    def get_depth_map(image):
+        image = feature_extractor(
+            image, return_tensors="pt").pixel_values.to(device)
+        with torch.no_grad(), torch.autocast(device):
+            depth_map = depth_estimator(image).predicted_depth
+
+        depth_map = torch.nn.functional.interpolate(
+            depth_map.unsqueeze(1),
+            size=(1024, 1024),
+            mode="bicubic",
+            align_corners=False,
+        )
+        return depth_map
+
     sdxl = SDXL(device)
 
-    init_image = load_image(
-        "https://huggingface.co/datasets/diffusers/test-arrays/resolve/main/stable_diffusion_inpaint/boy.png"
+    image = load_image(
+        'https://huggingface.co/lllyasviel/sd-controlnet-depth/resolve/main/images/stormtrooper.png'
     )
-    init_image = init_image.resize((1024, 1024))
+    image = image.resize((1024, 1024))
 
-    mask_image = load_image(
-        "https://huggingface.co/datasets/diffusers/test-arrays/resolve/main/stable_diffusion_inpaint/boy_mask.png"
-    )
-    mask_image = mask_image.resize((1024, 1024))
+    depth_image = get_depth_map(image)
 
-    image = sdxl("a handsome man with ray-ban sunglasses",
-                 init_image, mask_image)
-    image.save("experiments/sdxl.png")
+    for i in range(5):
+        image = sdxl(use_inpaint=False,
+                     prompt="hulk, marvel movie character, realistic, high detailed, 8k",
+                     image=None,
+                     depth_image=depth_image,
+                     update_mask=None,
+                     checker_mask=None)
+        save_image(image, f"experiments/sdxl_{i}.png")

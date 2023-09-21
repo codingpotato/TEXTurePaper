@@ -210,7 +210,8 @@ class TEXTure:
         depth_render = outputs['depth']
         # Render again with the median value to use as rgb, we shouldn't have color leakage, but just in case
         outputs = self.mesh_model.render(background=background,
-                                         render_cache=render_cache, use_median=self.paint_step > 1)
+                                         render_cache=render_cache,
+                                         use_median=self.paint_step > 1)
         rgb_render = outputs['image']
         # Render meta texture map
         meta_output = self.mesh_model.render(background=torch.Tensor([0, 0, 0]).to(self.device),
@@ -248,7 +249,8 @@ class TEXTure:
                 f'Update ratio {update_ratio:.5f} is small for an editing step, skipping')
             return
 
-        print(update_mask)
+        self.log_train_image(
+            update_mask[0, 0], name='update_mask', colormap=True)
         self.log_train_image(
             rgb_render * (1 - update_mask), name='masked_input')
         self.log_train_image(rgb_render * refine_mask, name='refine_regions')
@@ -433,14 +435,14 @@ class TEXTure:
         checker_mask[only_old_mask == 1] = checkerboard[only_old_mask == 1]
         return checker_mask
 
-    def project_back(self, render_cache: Dict[str, Any], background: Any, rgb_output: torch.Tensor,
-                     object_mask: torch.Tensor, update_mask: torch.Tensor, z_normals: torch.Tensor,
+    def project_back(self, render_cache: Dict[str, Any], background: Any,
+                     rgb_output: torch.Tensor, object_mask: torch.Tensor,
+                     update_mask: torch.Tensor, z_normals: torch.Tensor,
                      z_normals_cache: torch.Tensor):
         object_mask = torch.from_numpy(
             cv2.erode(object_mask[0, 0].detach().cpu().numpy(), np.ones((5, 5), np.uint8))).to(
             object_mask.device).unsqueeze(0).unsqueeze(0)
         render_update_mask = object_mask.clone()
-
         render_update_mask[update_mask == 0] = 0
 
         blurred_render_update_mask = torch.from_numpy(
