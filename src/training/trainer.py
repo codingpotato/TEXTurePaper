@@ -186,7 +186,6 @@ class TEXTure:
     def paint_viewpoint(self, data: Dict[str, Any]):
         logger.info(f'--- Painting step #{self.paint_step} ---')
         theta, phi, radius = data['theta'], data['phi'], data['radius']
-        # If offset of phi was set from code
         phi = phi - np.deg2rad(self.cfg.render.front_offset)
         phi = float(phi + 2 * np.pi if phi < 0 else phi)
         logger.info(
@@ -208,7 +207,8 @@ class TEXTure:
         # Render where missing values have special color
         rgb_render_raw = outputs['image']
         depth_render = outputs['depth']
-        # Render again with the median value to use as rgb, we shouldn't have color leakage, but just in case
+        # Render again with the median value to use as rgb, we shouldn't have
+        # color leakage, but just in case
         outputs = self.mesh_model.render(background=background,
                                          render_cache=render_cache,
                                          use_median=self.paint_step > 1)
@@ -221,7 +221,7 @@ class TEXTure:
         z_normals_cache = meta_output['image'].clamp(0, 1)
         edited_mask = meta_output['image'].clamp(0, 1)[:, 1:2]
 
-        self.log_train_image(rgb_render, 'rendered_input')
+        self.log_train_image(rgb_render, 'rgb_render')
         self.log_train_image(depth_render[0, 0], 'depth', colormap=True)
         self.log_train_image(z_normals[0, 0], 'z_normals', colormap=True)
         self.log_train_image(
@@ -258,6 +258,7 @@ class TEXTure:
         # Crop to inner region based on object mask
         min_h, min_w, max_h, max_w = utils.get_nonzero_region(
             outputs['mask'][0, 0])
+        print(f'Nonzero region: {min_h}, {max_h}, {min_w}, {max_w}')
 
         def crop(x): return x[:, :, min_h:max_h, min_w:max_w]
         cropped_rgb_render = crop(rgb_render)
@@ -272,13 +273,6 @@ class TEXTure:
             self.log_train_image(F.interpolate(cropped_rgb_render, (512, 512)) * (1 - checker_mask),
                                  'checkerboard_input')
 
-        # cropped_rgb_output, steps_vis = self.sdxl(text_string, cropped_rgb_render.detach(),
-        #                                           cropped_depth_render.detach(),
-        #                                           guidance_scale=self.cfg.guide.guidance_scale,
-        #                                           strength=1.0, update_mask=cropped_update_mask,
-        #                                           fixed_seed=self.cfg.optim.seed,
-        #                                           check_mask=checker_mask,
-        #                                           intermediate_vis=self.cfg.log.vis_diffusion_steps)
         cropped_rgb_output = self.sdxl(self.paint_step > 1,
                                        text_string,
                                        cropped_rgb_render.detach(),
@@ -286,7 +280,6 @@ class TEXTure:
                                        cropped_update_mask,
                                        checker_mask)
         self.log_train_image(cropped_rgb_output, name='sdxl_output')
-        # self.log_diffusion_steps(steps_vis)
 
         cropped_rgb_output = F.interpolate(cropped_rgb_output,
                                            (cropped_rgb_render.shape[2],
@@ -300,8 +293,12 @@ class TEXTure:
 
         # Project back
         object_mask = outputs['mask']
-        fitted_pred_rgb, _ = self.project_back(render_cache=render_cache, background=background, rgb_output=rgb_output,
-                                               object_mask=object_mask, update_mask=update_mask, z_normals=z_normals,
+        fitted_pred_rgb, _ = self.project_back(render_cache=render_cache,
+                                               background=background,
+                                               rgb_output=rgb_output,
+                                               object_mask=object_mask,
+                                               update_mask=update_mask,
+                                               z_normals=z_normals,
                                                z_normals_cache=z_normals_cache)
         self.log_train_image(fitted_pred_rgb, name='fitted')
 

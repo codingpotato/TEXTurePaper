@@ -1,7 +1,7 @@
 import torch
 
 from diffusers import ControlNetModel
-from diffusers import StableDiffusionXLControlNetInpaintPipeline
+from diffusers import StableDiffusionControlNetInpaintPipeline
 from diffusers import StableDiffusionXLControlNetPipeline
 from torchvision import transforms
 
@@ -20,26 +20,35 @@ class SDXL:
             variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
         ).to(device)
 
-        self.sdxl_inpaint = StableDiffusionXLControlNetInpaintPipeline.from_pretrained(
-            "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
-            controlnet=controlnet,
+        controlnet_depth = ControlNetModel.from_pretrained(
+            "lllyasviel/control_v11f1p_sd15_depth",
+            torch_dtype=torch.float16
+        ).to(device)
+
+        def disabled_safety_checker(images, clip_input):
+            return images, [False]
+
+        self.sd_inpaint = StableDiffusionControlNetInpaintPipeline.from_pretrained(
+            "runwayml/stable-diffusion-inpainting",
+            controlnet=controlnet_depth,
             variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
         ).to(device)
+        self.sd_inpaint.safety_checker = disabled_safety_checker
 
     def __call__(self, use_inpaint, prompt, image, depth_image, update_mask,
                  checker_mask):
-        depth_image = torch.nn.functional.interpolate(
-            depth_image, size=(1024, 1024), mode="bicubic",
-            align_corners=False,
-        )
-        depth_min = torch.amin(depth_image, dim=[1, 2, 3], keepdim=True)
-        depth_max = torch.amax(depth_image, dim=[1, 2, 3], keepdim=True)
-        depth_image = (depth_image - depth_min) / (depth_max - depth_min)
-        depth_image = torch.cat([depth_image] * 3, dim=1)
-
         if use_inpaint:
+            depth_image = torch.nn.functional.interpolate(
+                depth_image, size=(512, 512), mode="bicubic",
+                align_corners=False,
+            )
+            depth_min = torch.amin(depth_image, dim=[1, 2, 3], keepdim=True)
+            depth_max = torch.amax(depth_image, dim=[1, 2, 3], keepdim=True)
+            depth_image = (depth_image - depth_min) / (depth_max - depth_min)
+            depth_image = torch.cat([depth_image] * 3, dim=1)
+
             image = torch.nn.functional.interpolate(
-                image, size=(1024, 1024), mode="bicubic",
+                image, size=(512, 512), mode="bicubic",
                 align_corners=False,
             )
             min = torch.amin(image, dim=[1, 2, 3], keepdim=True)
@@ -47,11 +56,16 @@ class SDXL:
             image = (image - min) / (max - min)
 
             checker_mask = torch.nn.functional.interpolate(
-                checker_mask, size=(1024, 1024), mode="bicubic",
+                checker_mask, size=(512, 512), mode="bicubic",
                 align_corners=False,
             )
+            checker_min = torch.amin(checker_mask, dim=[1, 2, 3], keepdim=True)
+            checker_max = torch.amax(checker_mask, dim=[1, 2, 3], keepdim=True)
+            checker_mask = (checker_mask - checker_min) / \
+                (checker_max - checker_min)
+
             update_mask = torch.nn.functional.interpolate(
-                update_mask, size=(1024, 1024), mode="bicubic",
+                update_mask, size=(512, 512), mode="bicubic",
                 align_corners=False,
             )
             update_min = torch.amin(update_mask, dim=[1, 2, 3], keepdim=True)
@@ -59,20 +73,29 @@ class SDXL:
             update_mask = (update_mask - update_min) / \
                 (update_max - update_min)
 
-            image = self.sdxl_inpaint(prompt,
-                                      num_inference_steps=20,
-                                      image=image,
-                                      control_image=depth_image,
-                                      mask_image=update_mask,
-                                      guidance_scale=8.0,
-                                      strength=0.99,
-                                      controlnet_conditioning_scale=0.8,
-                                      output_type="np",
-                                      ).images[0]
+            image = self.sd_inpaint(prompt=prompt,
+                                    num_inference_steps=50,
+                                    image=image,
+                                    mask_image=update_mask,
+                                    control_image=depth_image,
+                                    guidance_scale=8.0,
+                                    strength=0.99,
+                                    controlnet_conditioning_scale=0.8,
+                                    output_type="np",
+                                    ).images[0]
         else:
+            depth_image = torch.nn.functional.interpolate(
+                depth_image, size=(1024, 1024), mode="bicubic",
+                align_corners=False,
+            )
+            depth_min = torch.amin(depth_image, dim=[1, 2, 3], keepdim=True)
+            depth_max = torch.amax(depth_image, dim=[1, 2, 3], keepdim=True)
+            depth_image = (depth_image - depth_min) / (depth_max - depth_min)
+            depth_image = torch.cat([depth_image] * 3, dim=1)
+
             image = self.sdxl(prompt,
                               image=depth_image,
-                              num_inference_steps=20,
+                              num_inference_steps=50,
                               guidance_scale=5.0,
                               controlnet_conditioning_scale=0.8,
                               output_type="np").images[0]

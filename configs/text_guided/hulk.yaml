@@ -2,7 +2,7 @@ log:
   exp_name: hulk
   save_interval: 18
 guide:
-  text: "Hulk, Marvel movie character, full body, releastic, high detailed, 8k, {} view"
+  text: "Hulk, Marvel movie character, releastic, high detailed, 8k, {} view"
   diffusion_name: stabilityai/stable-diffusion-2-depth
   shape_scale: 0.6
   append_direction: True
