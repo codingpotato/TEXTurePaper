@@ -201,26 +201,29 @@ class TEXTure:
                                        mode='bilinear', align_corners=False)
 
         # Render from viewpoint
-        outputs = self.mesh_model.render(
-            theta=theta, phi=phi, radius=radius, background=background)
+        outputs = self.mesh_model.render(theta=theta, phi=phi, radius=radius,
+                                         background=background)
         render_cache = outputs['render_cache']
         # Render where missing values have special color
-        rgb_render_raw = outputs['image']
-        depth_render = outputs['depth']
+        rgb_render_raw = outputs['image']   # [1, 3, 1200, 1200]
+        depth_render = outputs['depth']    # [1, 1, 1200, 1200]
         # Render again with the median value to use as rgb, we shouldn't have
         # color leakage, but just in case
         outputs = self.mesh_model.render(background=background,
                                          render_cache=render_cache,
                                          use_median=self.paint_step > 1)
-        rgb_render = outputs['image']
+        rgb_render = outputs['image']   # [1, 3, 1200, 1200]
         # Render meta texture map
         meta_output = self.mesh_model.render(background=torch.Tensor([0, 0, 0]).to(self.device),
                                              use_meta_texture=True, render_cache=render_cache)
 
+        # [1, 1, 1200, 1200]
         z_normals = outputs['normals'][:, -1:, :, :].clamp(0, 1)
+        # [1, 3, 1200, 1200]
         z_normals_cache = meta_output['image'].clamp(0, 1)
         edited_mask = meta_output['image'].clamp(0, 1)[:, 1:2]
 
+        self.log_train_image(rgb_render_raw, 'rgb_render_raw')
         self.log_train_image(rgb_render, 'rgb_render')
         self.log_train_image(depth_render[0, 0], 'depth', colormap=True)
         self.log_train_image(z_normals[0, 0], 'z_normals', colormap=True)
@@ -235,6 +238,7 @@ class TEXTure:
             text_string = self.text_string
         logger.info(f'text: {text_string}')
 
+        # update_mask: [1, 1, 1200, 1200]
         update_mask, generate_mask, refine_mask = self.calculate_trimap(rgb_render_raw=rgb_render_raw,
                                                                         depth_render=depth_render,
                                                                         z_normals=z_normals,
@@ -258,16 +262,16 @@ class TEXTure:
         # Crop to inner region based on object mask
         min_h, min_w, max_h, max_w = utils.get_nonzero_region(
             outputs['mask'][0, 0])
-        print(f'Nonzero region: {min_h}, {max_h}, {min_w}, {max_w}')
 
         def crop(x): return x[:, :, min_h:max_h, min_w:max_w]
-        cropped_rgb_render = crop(rgb_render)
-        cropped_depth_render = crop(depth_render)
-        cropped_update_mask = crop(update_mask)
+        cropped_rgb_render = crop(rgb_render)   # [1, 3, 938, 938]
+        cropped_depth_render = crop(depth_render)   # [1, 1, 938, 938]
+        cropped_update_mask = crop(update_mask)  # [1, 1, 938, 938]
         self.log_train_image(cropped_rgb_render, name='cropped_input')
 
         checker_mask = None
         if self.paint_step > 1:
+            # [1, 1, 512, 512]
             checker_mask = self.generate_checkerboard(crop(update_mask), crop(refine_mask),
                                                       crop(generate_mask))
             self.log_train_image(F.interpolate(cropped_rgb_render, (512, 512)) * (1 - checker_mask),
@@ -275,8 +279,8 @@ class TEXTure:
 
         cropped_rgb_output = self.sdxl(self.paint_step > 1,
                                        text_string,
-                                       cropped_rgb_render.detach(),
-                                       cropped_depth_render.detach(),
+                                       cropped_rgb_render,
+                                       cropped_depth_render,
                                        cropped_update_mask,
                                        checker_mask)
         self.log_train_image(cropped_rgb_output, name='sdxl_output')
@@ -419,7 +423,8 @@ class TEXTure:
 
         return update_mask, generate_mask, refine_mask
 
-    def generate_checkerboard(self, update_mask_inner, improve_z_mask_inner, update_mask_base_inner):
+    def generate_checkerboard(self, update_mask_inner, improve_z_mask_inner,
+                              update_mask_base_inner):
         checkerboard = torch.ones((1, 1, 64 // 2, 64 // 2)).to(self.device)
         # Create a checkerboard grid
         checkerboard[:, :, ::2, ::2] = 0

@@ -2,6 +2,7 @@ import torch
 
 from diffusers import ControlNetModel
 from diffusers import StableDiffusionControlNetInpaintPipeline
+from diffusers import StableDiffusionXLImg2ImgPipeline
 from diffusers import StableDiffusionXLControlNetPipeline
 from torchvision import transforms
 
@@ -17,6 +18,11 @@ class SDXL:
         self.sdxl = StableDiffusionXLControlNetPipeline.from_pretrained(
             "stabilityai/stable-diffusion-xl-base-1.0",
             controlnet=controlnet,
+            variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
+        ).to(device)
+
+        self.sdxl_refiner = StableDiffusionXLImg2ImgPipeline.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0",
             variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
         ).to(device)
 
@@ -38,68 +44,55 @@ class SDXL:
     def __call__(self, use_inpaint, prompt, image, depth_image, update_mask,
                  checker_mask):
         if use_inpaint:
-            depth_image = torch.nn.functional.interpolate(
-                depth_image, size=(512, 512), mode="bicubic",
-                align_corners=False,
-            )
-            depth_min = torch.amin(depth_image, dim=[1, 2, 3], keepdim=True)
-            depth_max = torch.amax(depth_image, dim=[1, 2, 3], keepdim=True)
-            depth_image = (depth_image - depth_min) / (depth_max - depth_min)
+            depth_image = self.interpolate(depth_image, size=(512, 512))
+            depth_image = self.normalize(depth_image)
             depth_image = torch.cat([depth_image] * 3, dim=1)
 
-            image = torch.nn.functional.interpolate(
-                image, size=(512, 512), mode="bicubic",
-                align_corners=False,
-            )
-            min = torch.amin(image, dim=[1, 2, 3], keepdim=True)
-            max = torch.amax(image, dim=[1, 2, 3], keepdim=True)
-            image = (image - min) / (max - min)
+            image = self.interpolate(image, size=(512, 512))
+            image = self.normalize(image)
 
-            checker_mask = torch.nn.functional.interpolate(
-                checker_mask, size=(512, 512), mode="bicubic",
-                align_corners=False,
-            )
-            checker_min = torch.amin(checker_mask, dim=[1, 2, 3], keepdim=True)
-            checker_max = torch.amax(checker_mask, dim=[1, 2, 3], keepdim=True)
-            checker_mask = (checker_mask - checker_min) / \
-                (checker_max - checker_min)
+            checker_mask = self.interpolate(checker_mask, size=(512, 512))
+            checker_mask = self.normalize(checker_mask)
 
-            update_mask = torch.nn.functional.interpolate(
-                update_mask, size=(512, 512), mode="bicubic",
-                align_corners=False,
-            )
-            update_min = torch.amin(update_mask, dim=[1, 2, 3], keepdim=True)
-            update_max = torch.amax(update_mask, dim=[1, 2, 3], keepdim=True)
-            update_mask = (update_mask - update_min) / \
-                (update_max - update_min)
+            update_mask = self.interpolate(update_mask, size=(512, 512))
+            update_mask = self.normalize(update_mask)
 
             image = self.sd_inpaint(prompt=prompt,
-                                    num_inference_steps=50,
+                                    num_inference_steps=10,
                                     image=image,
-                                    mask_image=update_mask,
+                                    mask_image=checker_mask,
                                     control_image=depth_image,
                                     guidance_scale=8.0,
                                     strength=0.99,
                                     controlnet_conditioning_scale=0.8,
                                     output_type="np",
                                     ).images[0]
+            image = transforms.ToTensor()(image).unsqueeze(0).to(self.device)
+            image = self.interpolate(image, size=(1024, 1024))
+            image = self.normalize(image)
+            image = self.sdxl_refiner(prompt=prompt, image=image,
+                                      output_type="np").images[0]
         else:
-            depth_image = torch.nn.functional.interpolate(
-                depth_image, size=(1024, 1024), mode="bicubic",
-                align_corners=False,
-            )
-            depth_min = torch.amin(depth_image, dim=[1, 2, 3], keepdim=True)
-            depth_max = torch.amax(depth_image, dim=[1, 2, 3], keepdim=True)
-            depth_image = (depth_image - depth_min) / (depth_max - depth_min)
+            depth_image = self.interpolate(depth_image, size=(1024, 1024))
+            depth_image = self.normalize(depth_image)
             depth_image = torch.cat([depth_image] * 3, dim=1)
-
             image = self.sdxl(prompt,
                               image=depth_image,
                               num_inference_steps=50,
-                              guidance_scale=5.0,
                               controlnet_conditioning_scale=0.8,
                               output_type="np").images[0]
+
         return transforms.ToTensor()(image).unsqueeze(0)
+
+    def interpolate(self, image, size):
+        return torch.nn.functional.interpolate(
+            image, size=size, mode="bicubic", align_corners=False,
+        )
+
+    def normalize(self, image):
+        min = torch.amin(image, dim=[1, 2, 3], keepdim=True)
+        max = torch.amax(image, dim=[1, 2, 3], keepdim=True)
+        return (image - min) / (max - min)
 
 
 if __name__ == "__main__":
