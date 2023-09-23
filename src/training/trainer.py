@@ -5,6 +5,7 @@ import numpy as np
 import pyrallis
 import torch
 import torch.nn.functional as F
+import utils
 
 from pathlib import Path
 from typing import Any, Dict, Union, List
@@ -15,7 +16,6 @@ from torch import nn
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import utils
 from configs.train_config import TrainConfig
 from models.textured_mesh import TexturedMeshModel
 from sdxl import SDXL
@@ -45,8 +45,8 @@ class TEXTure:
 
         self.view_dirs = ['front', 'left',
                           'back', 'right', 'overhead', 'bottom']
-        self.dirs = [(-15, 45), (-15, -45), (-15, 90), (-15, -90),
-                     (-15, 135), (-15, -135), (-15, 180), (-90, 0), (90, 0)]
+        self.dirs = [(0, 45), (0, -45), (0, 90), (0, -90),
+                     (0, 135), (0, -135), (0, 180), (-90, 0), (90, 0)]
         self.mesh_model = self.init_mesh_model()
         self.sdxl = SDXL(self.device)
         self.zero123 = Zero123(self.device)
@@ -123,10 +123,13 @@ class TEXTure:
 
         for data in self.dataloaders['train']:
             self.paint_step += 1
-            pbar.update(1)
-            self.paint_viewpoint(data)
-            self.evaluate(self.dataloaders['val'], self.eval_renders_path)
-            self.mesh_model.train()
+            if self.paint_step == 1 or self.paint_step == 8:
+                pbar.update(1)
+                self.paint_viewpoint(data)
+                self.evaluate(self.dataloaders['val'], self.eval_renders_path)
+                self.mesh_model.train()
+                if self.paint_step == 8:
+                    break
 
         self.mesh_model.change_default_to_median()
         logger.info('Finished Painting ^_^')
@@ -283,21 +286,24 @@ class TEXTure:
             image = self.zero123(raw_img=self.front_img,
                                  x=self.dirs[self.paint_step - 2][0],
                                  y=self.dirs[self.paint_step - 2][1]).to(self.device)
-            print(f'image: {image.shape}')
             self.log_train_image(image, 'zero123_output')
         else:
             image = None
 
-        cropped_rgb_output, steps_vis = self.sdxl(
-            image=image,
-            depth_mask=cropped_depth_render.detach(),
-            prompt=text_string,
-        )
+        if self.paint_step == 1:
+            cropped_rgb_output = self.sdxl.txt2img(
+                prompt=text_string,
+                depth_mask=cropped_depth_render,
+            )
 
-        cropped_rgb_output = torch.from_numpy(cropped_rgb_output)
-        cropped_rgb_output = cropped_rgb_output.unsqueeze(
-            0).permute(0, 3, 1, 2)
-        self.log_diffusion_steps(steps_vis)
+            cropped_rgb_output = torch.from_numpy(cropped_rgb_output)
+            cropped_rgb_output = cropped_rgb_output.unsqueeze(
+                0).permute(0, 3, 1, 2)
+        else:
+            image = torch.nn.functional.interpolate(
+                image, size=(1024, 1024), mode="bicubic", align_corners=False,
+            )
+            cropped_rgb_output = image
 
         cropped_rgb_output = F.interpolate(cropped_rgb_output,
                                            (cropped_rgb_render.shape[2],
@@ -312,7 +318,6 @@ class TEXTure:
 
         # Extend rgb_output to full image size
         rgb_output = rgb_render.clone()
-        print(rgb_output.shape)
         rgb_output[:, :, min_h:max_h, min_w:max_w] = cropped_rgb_output
         self.log_train_image(rgb_output, name='full_output')
 
@@ -520,12 +525,8 @@ class TEXTure:
 
     def log_train_image(self, tensor: torch.Tensor, name: str, colormap=False):
         if self.cfg.log.log_images:
-            if colormap:
-                tensor = cm.seismic(tensor.detach().cpu().numpy())[:, :, :3]
-            else:
-                tensor = einops.rearrange(
-                    tensor, '(1) c h w -> h w c').detach().cpu().numpy()
-            Image.fromarray((tensor * 255).astype(np.uint8)).save(
+            tensor = tensor.squeeze(0)
+            transforms.ToPILImage()(tensor).save(
                 self.train_renders_path / f'{self.paint_step:04d}_{name}.png')
 
     def log_diffusion_steps(self, intermediate_vis: List[Image.Image]):
