@@ -12,6 +12,7 @@ from PIL import Image
 from loguru import logger
 from matplotlib import cm
 from torch import nn
+from torchvision import transforms
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -121,6 +122,8 @@ class TEXTure:
             self.paint_viewpoint(data)
             self.evaluate(self.dataloaders['val'], self.eval_renders_path)
             self.mesh_model.train()
+            if self.paint_step == 1:
+                break
 
         self.mesh_model.change_default_to_median()
         logger.info('Finished Painting ^_^')
@@ -225,10 +228,9 @@ class TEXTure:
 
         self.log_train_image(rgb_render_raw, 'rgb_render_raw')
         self.log_train_image(rgb_render, 'rgb_render')
-        self.log_train_image(depth_render[0, 0], 'depth', colormap=True)
-        self.log_train_image(z_normals[0, 0], 'z_normals', colormap=True)
-        self.log_train_image(
-            z_normals_cache[0, 0], 'z_normals_cache', colormap=True)
+        self.log_train_image(depth_render[0, 0], 'depth')
+        self.log_train_image(z_normals[0, 0], 'z_normals')
+        self.log_train_image(z_normals_cache[0, 0], 'z_normals_cache')
 
         # text embeddings
         if self.cfg.guide.append_direction:
@@ -253,8 +255,7 @@ class TEXTure:
                 f'Update ratio {update_ratio:.5f} is small for an editing step, skipping')
             return
 
-        self.log_train_image(
-            update_mask[0, 0], name='update_mask', colormap=True)
+        self.log_train_image(update_mask[0, 0], name='update_mask')
         self.log_train_image(
             rgb_render * (1 - update_mask), name='masked_input')
         self.log_train_image(rgb_render * refine_mask, name='refine_regions')
@@ -277,12 +278,17 @@ class TEXTure:
             self.log_train_image(F.interpolate(cropped_rgb_render, (512, 512)) * (1 - checker_mask),
                                  'checkerboard_input')
 
-        cropped_rgb_output = self.sdxl(self.paint_step > 1,
-                                       text_string,
-                                       cropped_rgb_render,
-                                       cropped_depth_render,
-                                       cropped_update_mask,
-                                       checker_mask)
+        if self.paint_step == 1:
+            cropped_rgb_output = self.sdxl.txt2img(prompt=text_string,
+                                                   depth_mask=cropped_depth_render)
+        else:
+            cropped_rgb_output = self.sdxl(self.paint_step > 1,
+                                           text_string,
+                                           cropped_rgb_render,
+                                           cropped_depth_render,
+                                           cropped_update_mask,
+                                           checker_mask)
+
         self.log_train_image(cropped_rgb_output, name='sdxl_output')
 
         cropped_rgb_output = F.interpolate(cropped_rgb_output,
@@ -503,15 +509,11 @@ class TEXTure:
 
         return rgb_render, current_z_normals
 
-    def log_train_image(self, tensor: torch.Tensor, name: str, colormap=False):
+    def log_train_image(self, tensor: torch.Tensor, name: str):
         if self.cfg.log.log_images:
-            if colormap:
-                tensor = cm.seismic(tensor.detach().cpu().numpy())[:, :, :3]
-            else:
-                tensor = einops.rearrange(
-                    tensor, '(1) c h w -> h w c').detach().cpu().numpy()
-            Image.fromarray((tensor * 255).astype(np.uint8)).save(
-                self.train_renders_path / f'{self.paint_step:04d}_{name}.jpg')
+            tensor = tensor.squeeze(0)
+            transforms.ToPILImage()(tensor).save(
+                self.train_renders_path / f'{self.paint_step:04d}_{name}.png')
 
     def log_diffusion_steps(self, intermediate_vis: List[Image.Image]):
         if len(intermediate_vis) > 0:
@@ -521,9 +523,3 @@ class TEXTure:
             for k, intermedia_res in enumerate(intermediate_vis):
                 intermedia_res.save(
                     step_folder / f'{k:02d}_diffusion_step.jpg')
-
-    def save_image(self, tensor: torch.Tensor, path: Path):
-        if self.cfg.log.log_images:
-            Image.fromarray(
-                (einops.rearrange(tensor, '(1) c h w -> h w c').detach().cpu().numpy() * 255).astype(np.uint8)).save(
-                path)
