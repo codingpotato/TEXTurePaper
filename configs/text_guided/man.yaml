@@ -1,11 +1,11 @@
 log:
-  exp_name: hulk
+  exp_name: man
   save_interval: 18
 guide:
-  text: "Hulk, Marvel movie character, smooth backgound color, releastic, high detailed, 8k, {} view"
+  text: "A boxer man, smooth backgound color, releastic, high detailed, 8k, {} view"
   shape_scale: 0.6
   append_direction: True
-  shape_path: ../obj/hulk.obj
+  shape_path: ../obj/man.obj
   texture_resolution: 1024
   guidance_scale: 10
   texture_interpolation_mode: 'bilinear'

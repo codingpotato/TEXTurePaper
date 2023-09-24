@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Any, Dict, Union, List
 
 import cv2
-import einops
 import imageio
 import numpy as np
 import pyrallis
@@ -118,12 +117,21 @@ class TEXTure:
 
         for data in self.dataloaders['train']:
             self.paint_step += 1
-            pbar.update(1)
-            self.paint_viewpoint(data)
-            self.evaluate(self.dataloaders['val'], self.eval_renders_path)
-            self.mesh_model.train()
-            if self.paint_step == 1:
-                break
+            if self.paint_step == 1 or self.paint_step == 8:
+                pbar.update(1)
+                self.paint_viewpoint(data)
+                self.evaluate(self.dataloaders['val'], self.eval_renders_path)
+                self.mesh_model.train()
+
+        self.paint_step = 0
+        for data in self.dataloaders['train']:
+            self.paint_step += 1
+            if self.paint_step != 1 and self.paint_step != 4 and \
+                    self.paint_step != 5 and self.paint_step != 8:
+                pbar.update(1)
+                self.paint_viewpoint(data)
+                self.evaluate(self.dataloaders['val'], self.eval_renders_path)
+                self.mesh_model.train()
 
         self.mesh_model.change_default_to_median()
         logger.info('Finished Painting ^_^')
@@ -255,7 +263,9 @@ class TEXTure:
                 f'Update ratio {update_ratio:.5f} is small for an editing step, skipping')
             return
 
-        self.log_train_image(update_mask[0, 0], name='update_mask')
+        self.log_train_image(update_mask, name='update_mask')
+        self.log_train_image(generate_mask, name='generate_mask')
+        self.log_train_image(refine_mask, name='refine_mask')
         self.log_train_image(
             rgb_render * (1 - update_mask), name='masked_input')
         self.log_train_image(rgb_render * refine_mask, name='refine_regions')
@@ -267,7 +277,7 @@ class TEXTure:
         def crop(x): return x[:, :, min_h:max_h, min_w:max_w]
         cropped_rgb_render = crop(rgb_render)   # [1, 3, 938, 938]
         cropped_depth_render = crop(depth_render)   # [1, 1, 938, 938]
-        cropped_update_mask = crop(update_mask)  # [1, 1, 938, 938]
+        cropped_generate_mask = crop(generate_mask)  # [1, 1, 938, 938]
         self.log_train_image(cropped_rgb_render, name='cropped_input')
 
         checker_mask = None
@@ -281,13 +291,16 @@ class TEXTure:
         if self.paint_step == 1:
             cropped_rgb_output = self.sdxl.txt2img(prompt=text_string,
                                                    depth_mask=cropped_depth_render)
+            self.front_image = cropped_rgb_output
+        elif self.paint_step == 8:
+            cropped_rgb_output = self.sdxl.img2img(prompt=text_string,
+                                                   image=self.front_image,
+                                                   depth_mask=cropped_depth_render)
         else:
-            cropped_rgb_output = self.sdxl(self.paint_step > 1,
-                                           text_string,
-                                           cropped_rgb_render,
-                                           cropped_depth_render,
-                                           cropped_update_mask,
-                                           checker_mask)
+            cropped_rgb_output = self.sdxl.inpaint(prompt=text_string,
+                                                   image=cropped_rgb_render,
+                                                   depth_mask=cropped_depth_render,
+                                                   mask=cropped_generate_mask)
 
         self.log_train_image(cropped_rgb_output, name='sdxl_output')
 
@@ -311,8 +324,6 @@ class TEXTure:
                                                z_normals=z_normals,
                                                z_normals_cache=z_normals_cache)
         self.log_train_image(fitted_pred_rgb, name='fitted')
-
-        return
 
     def eval_render(self, data):
         theta = data['theta']
@@ -353,15 +364,15 @@ class TEXTure:
 
     def calculate_trimap(self, rgb_render_raw: torch.Tensor,
                          depth_render: torch.Tensor,
-                         z_normals: torch.Tensor, z_normals_cache: torch.Tensor, edited_mask: torch.Tensor,
-                         mask: torch.Tensor):
+                         z_normals: torch.Tensor, z_normals_cache: torch.Tensor,
+                         edited_mask: torch.Tensor, mask: torch.Tensor):
         diff = (rgb_render_raw.detach() - torch.tensor(self.mesh_model.default_color).view(1, 3, 1, 1).to(
             self.device)).abs().sum(axis=1)
         exact_generate_mask = (diff < 0.1).float().unsqueeze(0)
 
         # Extend mask
         generate_mask = torch.from_numpy(
-            cv2.dilate(exact_generate_mask[0, 0].detach().cpu().numpy(), np.ones((19, 19), np.uint8))).to(
+            cv2.dilate(exact_generate_mask[0, 0].detach().cpu().numpy(), np.ones((3, 3), np.uint8))).to(
             exact_generate_mask.device).unsqueeze(0).unsqueeze(0)
 
         update_mask = generate_mask.clone()
@@ -448,13 +459,13 @@ class TEXTure:
                      update_mask: torch.Tensor, z_normals: torch.Tensor,
                      z_normals_cache: torch.Tensor):
         object_mask = torch.from_numpy(
-            cv2.erode(object_mask[0, 0].detach().cpu().numpy(), np.ones((5, 5), np.uint8))).to(
+            cv2.erode(object_mask[0, 0].detach().cpu().numpy(), np.ones((3, 3), np.uint8))).to(
             object_mask.device).unsqueeze(0).unsqueeze(0)
         render_update_mask = object_mask.clone()
         render_update_mask[update_mask == 0] = 0
 
         blurred_render_update_mask = torch.from_numpy(
-            cv2.dilate(render_update_mask[0, 0].detach().cpu().numpy(), np.ones((25, 25), np.uint8))).to(
+            cv2.dilate(render_update_mask[0, 0].detach().cpu().numpy(), np.ones((3, 3), np.uint8))).to(
             render_update_mask.device).unsqueeze(0).unsqueeze(0)
         blurred_render_update_mask = utils.gaussian_blur(
             blurred_render_update_mask, 21, 16)
