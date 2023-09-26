@@ -19,6 +19,7 @@ from src import utils
 from src.configs.train_config import TrainConfig
 from src.models.textured_mesh import TexturedMeshModel
 from src.sdxl import SDXL
+from src.stable_diffusion_depth import StableDiffusion
 from src.training.views_dataset import ViewsDataset, MultiviewDataset
 from src.utils import make_path, tensor2numpy
 
@@ -122,12 +123,10 @@ class TEXTure:
                 self.paint_viewpoint(data)
                 self.evaluate(self.dataloaders['val'], self.eval_renders_path)
                 self.mesh_model.train()
-
         self.paint_step = 0
         for data in self.dataloaders['train']:
             self.paint_step += 1
-            if self.paint_step != 1 and self.paint_step != 4 and \
-                    self.paint_step != 5 and self.paint_step != 8:
+            if self.paint_step != 1 and self.paint_step != 8:
                 pbar.update(1)
                 self.paint_viewpoint(data)
                 self.evaluate(self.dataloaders['val'], self.eval_renders_path)
@@ -277,7 +276,7 @@ class TEXTure:
         def crop(x): return x[:, :, min_h:max_h, min_w:max_w]
         cropped_rgb_render = crop(rgb_render)   # [1, 3, 938, 938]
         cropped_depth_render = crop(depth_render)   # [1, 1, 938, 938]
-        cropped_generate_mask = crop(generate_mask)  # [1, 1, 938, 938]
+        cropped_update_mask = crop(update_mask)  # [1, 1, 938, 938]
         self.log_train_image(cropped_rgb_render, name='cropped_input')
 
         checker_mask = None
@@ -299,9 +298,8 @@ class TEXTure:
         else:
             cropped_rgb_output = self.sdxl.inpaint(prompt=text_string,
                                                    image=cropped_rgb_render,
-                                                   depth_mask=cropped_depth_render,
-                                                   mask=cropped_generate_mask)
-
+                                                   mask=cropped_update_mask,
+                                                   depth_mask=cropped_depth_render)
         self.log_train_image(cropped_rgb_output, name='sdxl_output')
 
         cropped_rgb_output = F.interpolate(cropped_rgb_output,
@@ -371,8 +369,9 @@ class TEXTure:
         exact_generate_mask = (diff < 0.1).float().unsqueeze(0)
 
         # Extend mask
+        size = (10, 10) if self.paint_step == 4 or self.paint_step == 5 else (3, 3)
         generate_mask = torch.from_numpy(
-            cv2.dilate(exact_generate_mask[0, 0].detach().cpu().numpy(), np.ones((3, 3), np.uint8))).to(
+            cv2.dilate(exact_generate_mask[0, 0].detach().cpu().numpy(), np.ones(size, np.uint8))).to(
             exact_generate_mask.device).unsqueeze(0).unsqueeze(0)
 
         update_mask = generate_mask.clone()

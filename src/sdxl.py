@@ -1,10 +1,9 @@
 import torch
 
 from diffusers import ControlNetModel
+from diffusers import StableDiffusionInpaintPipeline
 from diffusers import StableDiffusionXLControlNetPipeline
 from diffusers import StableDiffusionXLControlNetImg2ImgPipeline
-from diffusers import StableDiffusionXLControlNetInpaintPipeline
-from diffusers import StableDiffusionXLImg2ImgPipeline
 from torchvision import transforms
 
 
@@ -28,23 +27,17 @@ class SDXL:
             variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
         ).to(device)
 
-        self.sdxl_inpaint = StableDiffusionXLControlNetInpaintPipeline.from_pretrained(
-            "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
-            controlnet=controlnet,
-            variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
-        ).to(device)
-        self.sdxl_refiner = StableDiffusionXLImg2ImgPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-xl-refiner-1.0",
-            text_encoder_2=self.sdxl_inpaint.text_encoder_2,
-            vae=self.sdxl_inpaint.vae,
-            variant="fp16", use_safetensors=True, torch_dtype=torch.float16,
+        self.sd_inpaint = StableDiffusionInpaintPipeline.from_pretrained(
+            "stabilityai/stable-diffusion-2-inpainting",
+            torch_dtype=torch.float16,
         ).to(device)
 
     def txt2img(self, prompt, depth_mask):
         depth_mask = self.preprocess_depth_mask(depth_mask)
         image = self.sdxl(prompt, image=depth_mask,
                           num_inference_steps=30,
-                          controlnet_conditioning_scale=0.5,
+                          guidance_scale=7.5,
+                          controlnet_conditioning_scale=0.8,
                           output_type="np").images[0]
         return transforms.ToTensor()(image).unsqueeze(0)
 
@@ -52,28 +45,28 @@ class SDXL:
         depth_mask = self.preprocess_depth_mask(depth_mask)
         image = self.sdxl_img2img(prompt, image=image, control_image=depth_mask,
                                   num_inference_steps=30,
-                                  controlnet_conditioning_scale=0.5,
+                                  guidance_scale=7.5,
+                                  strength=0.8,
+                                  controlnet_conditioning_scale=0.7,
                                   output_type="np").images[0]
         return transforms.ToTensor()(image).unsqueeze(0)
 
-    def inpaint(self, prompt, image, depth_mask, mask,):
-        size = (1024, 1024)
+    def inpaint(self, prompt, image, mask, depth_mask):
+        size = (512, 512)
         depth_mask = self.preprocess_depth_mask(depth_mask, size)
         image = self.interpolate(image, size)
         image = self.normalize(image)
         mask = self.interpolate(mask, size)
         mask = self.normalize(mask)
 
-        latent = self.sdxl_inpaint(prompt=prompt,
-                                   num_inference_steps=20,
-                                   image=image,
-                                   mask_image=mask,
-                                   control_image=depth_mask,
-                                   controlnet_conditioning_scale=0.5,
-                                   output_type="latent",
-                                   ).images
-        image = self.sdxl_refiner(
-            prompt=prompt, image=latent, output_type="np").images[0]
+        image = self.sd_inpaint(prompt=prompt,
+                                num_inference_steps=30,
+                                image=image,
+                                mask_image=mask,
+                                guidance_scale=7.5,
+                                strength=0.99,
+                                output_type="np",
+                                ).images[0]
         return transforms.ToTensor()(image).unsqueeze(0)
 
     def preprocess_depth_mask(self, depth_mask, size=(1024, 1024)):

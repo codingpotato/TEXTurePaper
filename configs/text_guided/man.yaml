@@ -2,7 +2,7 @@ log:
   exp_name: man
   save_interval: 18
 guide:
-  text: "A boxer man, smooth backgound color, releastic, high detailed, 8k, {} view"
+  text: "A young man, Disney Pixar movie character, cute, photorealistic, high detailed, 8k, {} view"
   shape_scale: 0.6
   append_direction: True
   shape_path: ../obj/man.obj
